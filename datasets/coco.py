@@ -24,6 +24,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         img, target = super(CocoDetection, self).__getitem__(idx)
         image_id = self.ids[idx]
         target = {'image_id': image_id, 'annotations': target}
+
         img, target = self.prepare(img, target)
         if self._transforms is not None:
             img, target = self._transforms(img, target)
@@ -48,8 +49,9 @@ def convert_coco_poly_to_mask(segmentations, height, width):
 
 
 class ConvertCocoPolysToMask(object):
-    def __init__(self, return_masks=False):
+    def __init__(self, return_masks=False, return_offsets=True):
         self.return_masks = return_masks
+        self.return_offsets = return_offsets
 
     def __call__(self, image, target):
         w, h = image.size
@@ -62,6 +64,10 @@ class ConvertCocoPolysToMask(object):
         anno = [obj for obj in anno if 'iscrowd' not in obj or obj['iscrowd'] == 0]
 
         boxes = [obj["bbox"] for obj in anno]
+
+        offsets = [obj["offset"] for obj in anno]
+        offsets = torch.as_tensor(offsets, dtype=torch.float32).reshape(-1, 2)
+
         # guard against no boxes via resizing
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
         boxes[:, 2:] += boxes[:, :2]
@@ -75,18 +81,21 @@ class ConvertCocoPolysToMask(object):
             segmentations = [obj["segmentation"] for obj in anno]
             masks = convert_coco_poly_to_mask(segmentations, h, w)
 
-
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
         boxes = boxes[keep]
         classes = classes[keep]
         if self.return_masks:
             masks = masks[keep]
-
+        if self.return_offsets:
+            offsets = offsets[keep]
         target = {}
         target["boxes"] = boxes
         target["labels"] = classes
+
         if self.return_masks:
             target["masks"] = masks
+        if self.return_offsets:
+            target["offsets"] = offsets
         target["image_id"] = image_id
 
         # for conversion to coco api
@@ -95,6 +104,7 @@ class ConvertCocoPolysToMask(object):
         target["area"] = area[keep]
         target["iscrowd"] = iscrowd[keep]
 
+
         target["orig_size"] = torch.as_tensor([int(h), int(w)])
         target["size"] = torch.as_tensor([int(h), int(w)])
 
@@ -102,7 +112,6 @@ class ConvertCocoPolysToMask(object):
 
 
 def make_coco_transforms(image_set):
-
     normalize = T.Compose([
         T.ToTensor(),
         T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -112,7 +121,7 @@ def make_coco_transforms(image_set):
 
     if image_set == 'train':
         return T.Compose([
-            #T.RandomHorizontalFlip(),
+            # T.RandomHorizontalFlip(),
             T.RandomSelect(
                 T.RandomResize(scales, max_size=1000),
                 T.Compose([
@@ -126,7 +135,7 @@ def make_coco_transforms(image_set):
 
     if image_set == 'val':
         return T.Compose([
-            T.RandomResize([800], max_size=1333),
+            T.RandomResize([800], max_size=1000),
             normalize,
         ])
 
