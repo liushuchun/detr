@@ -69,18 +69,18 @@ class DETR(nn.Module):
         outputs_class = self.class_embed(hs)
         outputs_offset = self.offset_embed(hs)
         outputs_coord = self.bbox_embed(hs).sigmoid()
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1], 'pred_offset': outputs_offset}
+        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1], 'pred_offsets': outputs_offset[-1]}
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord,outputs_offset)
         return out
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_coord):
+    def _set_aux_loss(self, outputs_class, outputs_coord,outputs_offset):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
-                for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+        return [{'pred_logits': a, 'pred_boxes': b,'pred_offsets':c}
+                for a, b,c in zip(outputs_class[:-1], outputs_coord[:-1],outputs_offset[:-1])]
 
 
 class SetCriterion(nn.Module):
@@ -101,7 +101,6 @@ class SetCriterion(nn.Module):
         """
         super().__init__()
         self.num_classes = num_classes
-        print("num_classes:", num_classes)
         self.matcher = matcher
         self.weight_dict = weight_dict
         self.eos_coef = eos_coef
@@ -167,12 +166,13 @@ class SetCriterion(nn.Module):
         return losses
 
     def loss_offset(self, outputs, targets, indices, num_boxes):
-        assert "pred_offset" in outputs
+        assert "pred_offsets" in outputs
 
         src_idx = self._get_src_permutation_idx(indices)
 
-        src_offsets = outputs['pred_offset'][src_idx]
-        target_offsets = torch.cat([t['offset'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        src_offsets = outputs['pred_offsets'][src_idx]
+        target_offsets = torch.cat([t['offsets'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+                       # torch.cat([t['offsets'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
         loss_offset = F.l1_loss(src_offsets, target_offsets, reduce='none')
         loss_offset_mse = F.mse_loss(src_offsets, target_offsets)
@@ -228,7 +228,7 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
             'boxes': self.loss_boxes,
-            'offset': self.loss_offset,
+            'offsets': self.loss_offset,
             'masks': self.loss_masks
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
@@ -290,7 +290,7 @@ class PostProcess(nn.Module):
                           For visualization, this should be the image size after data augment, but before padding
         """
         out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
-        output_offset = outputs["pred_offset"]
+        output_offset = outputs["pred_offsets"]
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -305,7 +305,7 @@ class PostProcess(nn.Module):
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
         scale_fct_offset = torch.stack([img_w, img_h], dim=1)
-        offsets = output_offset * scale_fct_offset
+        offsets = output_offset * scale_fct_offset[:,None,:]
 
         results = [{'scores': s, 'labels': l, 'boxes': b, 'offsets': o} for s, l, b, o in
                    zip(scores, labels, boxes, offsets)]
@@ -370,7 +370,7 @@ def build(args):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    losses = ['labels', 'boxes', 'cardinality']
+    losses = ['labels', 'boxes', 'cardinality','offsets']
     if args.masks:
         losses += ["masks"]
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
