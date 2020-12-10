@@ -1,1 +1,1 @@
-CUDA_VISIBLE_DEVICES=4 python main.py  --coco_path=./datas
+CUDA_VISIBLE_DEVICES=4 python main.py  --coco_path=./datas 

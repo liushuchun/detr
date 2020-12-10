@@ -18,10 +18,10 @@ def convert_front_to_coco(front_path):
         for line in f.readlines():
 
             for idx, char in enumerate(line):
-                key_map[char] = idx
+                key_map[char] = idx+1
             break
 
-    key_map["[UNKONWN]"] = len(key_map)
+    key_map["[UNKONWN]"] = len(key_map)+1
 
     # "[UNKNOWN]"
     print(len(key_map))  # 3595

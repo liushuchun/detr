@@ -1,4 +1,5 @@
 import math
+import cv2
 
 from PIL import Image
 import requests
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 
 from IPython.display import display, clear_output
 from models import build_model
+import argparse
 
 
 import torch
@@ -87,7 +89,7 @@ def get_args_parser():
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--resume', default='./checkpoints/checkpoint0079.pth', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
@@ -105,15 +107,60 @@ transform = T.Compose([
     T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
-def main(args):
+def box_cxcywh_to_xyxy(x):
+    x_c, y_c, w, h = x.unbind(1)
+    b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
+         (x_c + 0.5 * w), (y_c + 0.5 * h)]
+    return torch.stack(b, dim=1)
 
-    img_path=""
-    img=Image.open(img_path)
+def rescale_bboxes(out_bbox, size):
+    img_w, img_h = size
+    b = box_cxcywh_to_xyxy(out_bbox)
+    b = b * torch.tensor([img_w, img_h, img_w, img_h],device='cuda', dtype=torch.float32)
+    return b
+
+
+def main(args):
+    import numpy as np 
+
+    import os
+
+    img_path="./datas/images/986b7dfd7ac63fb6f76b4b5c9903962cjpeg.jpeg"
+    ori_img=Image.open(img_path)
     model,_,_=build_model(args)
     model.to("cuda")
+    checkpoint=torch.load(args.resume)
+    model.load_state_dict(checkpoint["model"])
+
+    img = transform(ori_img).unsqueeze(0).to("cuda")
+    cv_img=np.array(ori_img)
+    
     outputs=model(img)
     probas = outputs['pred_logits'].softmax(-1)[0, :, :-1]
-    keep = probas.max(-1).values > 0.9
+    keep = probas.max(-1).values > 0.5
+    probas = probas[keep]
 
     # convert boxes from [0; 1] to image scales
-    bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], im.size)
+    bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], ori_img.size)
+    offsets =outputs['pred_offsets'][0,keep]
+    img_w,img_h=ori_img.size
+
+    for bbox,offset,proba in zip(bboxes_scaled.tolist(),offsets,probas):
+        print(bbox,offset,proba.max(-1).values)
+        x_min,y_min,x_max,y_max =bbox
+        x1_center=(x_min+x_max)/2.0
+        y1_center=(y_min+y_max)/2.0
+        
+        dx,dy=offset.cpu().numpy().tolist()
+        x2_center=x1_center+dx*img_w
+        y2_center=y1_center+dy*img_h
+        cv2.rectangle(cv_img,(int(x_min),int(y_min)),(int(x_max),int(y_max)),(0,255,0),2)
+        cv2.arrowedLine(cv_img,(int(x1_center),int(y1_center)),(int(x2_center),int(y2_center)),(0,0,255),2)
+    
+    cv2.imwrite(os.path.basename(img_path),cv_img)
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser('detr script',parents=[get_args_parser()]) 
+    args = parser.parse_args()
+    main(args)
+
