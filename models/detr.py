@@ -36,7 +36,9 @@ class DETR(nn.Module):
         self.transformer = transformer
         hidden_dim = transformer.d_model
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
-        self.offset_embed = nn.Linear(hidden_dim, 2)
+
+        self.offset_embed_v2 =  MLP(hidden_dim, hidden_dim, 2, 3)
+
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
@@ -67,7 +69,7 @@ class DETR(nn.Module):
         hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
 
         outputs_class = self.class_embed(hs)
-        outputs_offset = self.offset_embed(hs)
+        outputs_offset = self.offset_embed_v2(hs)
         outputs_coord = self.bbox_embed(hs).sigmoid()
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1], 'pred_offsets': outputs_offset[-1]}
         if self.aux_loss:
