@@ -180,7 +180,7 @@ class SetCriterion(nn.Module):
         loss_offset_mse = F.mse_loss(src_offsets, target_offsets)
 
         losses = {}
-        losses['loss_offset'] = loss_offset.sum() / num_boxes + loss_offset_mse / num_boxes
+        losses['loss_offset'] = 500*loss_offset.sum() / num_boxes + 500*loss_offset_mse / num_boxes
 
         return losses
 
@@ -339,7 +339,7 @@ def build(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = 3596  # if args.dataset_file != 'coco' else 91
+    num_classes = 2  # if args.dataset_file != 'coco' else 91
     # if args.dataset_file == "coco_panoptic":
     #     # for panoptic, we just add a num_classes that is large enough to hold
     #     # max_obj_id + 1, but the exact value doesn't really matter
