@@ -65,7 +65,7 @@ class ConvertCocoPolysToMask(object):
 
         boxes = [obj["bbox"] for obj in anno]
 
-        xyxy = [obj["xyxy"] for obj in anno]
+        xyxy = [obj["xyxy"] for obj in anno if obj["xyxy"][0]>0 and obj["xyxy"][1]>0 and obj["xyxy"][2]>0 and obj["xyxy"][3]>0]
         xyxy = torch.as_tensor(xyxy, dtype=torch.float32).reshape(-1, 2)
 
         # guard against no boxes via resizing
