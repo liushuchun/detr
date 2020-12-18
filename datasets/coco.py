@@ -49,9 +49,9 @@ def convert_coco_poly_to_mask(segmentations, height, width):
 
 
 class ConvertCocoPolysToMask(object):
-    def __init__(self, return_masks=False, return_offsets=True):
+    def __init__(self, return_masks=False, return_xyxy=True):
         self.return_masks = return_masks
-        self.return_offsets = return_offsets
+        self.return_xyxy = return_xyxy
 
     def __call__(self, image, target):
         w, h = image.size
@@ -65,8 +65,8 @@ class ConvertCocoPolysToMask(object):
 
         boxes = [obj["bbox"] for obj in anno]
 
-        offsets = [obj["offset"] for obj in anno]
-        offsets = torch.as_tensor(offsets, dtype=torch.float32).reshape(-1, 2)
+        xyxy = [obj["xyxy"] for obj in anno]
+        xyxy = torch.as_tensor(xyxy, dtype=torch.float32).reshape(-1, 2)
 
         # guard against no boxes via resizing
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
@@ -87,15 +87,15 @@ class ConvertCocoPolysToMask(object):
         if self.return_masks:
             masks = masks[keep]
         if self.return_offsets:
-            offsets = offsets[keep]
+            xyxy = xyxy[keep]
         target = {}
         target["boxes"] = boxes
         target["labels"] = classes
 
         if self.return_masks:
             target["masks"] = masks
-        if self.return_offsets:
-            target["offsets"] = offsets
+        if self.return_xyxy:
+            target["xyxy"] = xyxy
         target["image_id"] = image_id
 
         # for conversion to coco api

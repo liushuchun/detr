@@ -22,7 +22,7 @@ def crop(image, target, region):
     # should we do something wrt the original size?
     target["size"] = torch.tensor([h, w])
 
-    fields = ["labels", "area", "iscrowd", "offsets"]
+    fields = ["labels", "area", "iscrowd", "xyxy"]
 
     if "boxes" in target:
         boxes = target["boxes"]
@@ -116,10 +116,10 @@ def resize(image, target, size, max_size=None):
         boxes = target["boxes"]
         scaled_boxes = boxes * torch.as_tensor([ratio_width, ratio_height, ratio_width, ratio_height])
         target["boxes"] = scaled_boxes
-    if "offsets" in target:
-        offsets = target["offsets"]
-        scaled_offsets = offsets * torch.as_tensor([ratio_width, ratio_height])
-        target["offsets"] = scaled_offsets
+    if "xyxy" in target:
+        xyxy = target["xyxy"]
+        scaled_xyxy = xyxy * torch.as_tensor([ratio_width, ratio_height,ratio_width,ratio_height])
+        target["xyxy"] = scaled_xyxy
 
     if "area" in target:
         area = target["area"]
@@ -260,10 +260,10 @@ class Normalize(object):
             boxes = box_xyxy_to_cxcywh(boxes)
             boxes = boxes / torch.tensor([w, h, w, h], dtype=torch.float32)
             target["boxes"] = boxes
-        if "offsets" in target:
-            offsets = target["offsets"]
-            offsets = offsets / torch.tensor([w, h], dtype=torch.float32)
-            target["offsets"] = offsets
+        if "xyxy" in target:
+            xyxy = target["xyxy"]
+            xyxy = xyxy / torch.tensor([w, h,w,h], dtype=torch.float32)
+            target["xyxy"] = xyxy
         return image, target
 
 

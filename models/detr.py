@@ -37,7 +37,8 @@ class DETR(nn.Module):
         hidden_dim = transformer.d_model
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
 
-        self.offset_embed_v2 =  MLP(hidden_dim, hidden_dim, 2, 3)
+        self.conn_class_embed = nn.Linear(hidden_dim, 2)
+        self.conn_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
@@ -69,20 +70,26 @@ class DETR(nn.Module):
         hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
 
         outputs_class = self.class_embed(hs)
-        outputs_offset = self.offset_embed_v2(hs)
         outputs_coord = self.bbox_embed(hs).sigmoid()
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1], 'pred_offsets': outputs_offset[-1]}
+
+        outputs_connect_class = self.conn_class_embed(hs)
+        outputs_connect = self.conn_embed(hs).sigmoid()
+
+        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
+               "pred_connect_logits": outputs_connect_class[-1], "pred_connect_xyxy": outputs_connect[-1]}
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord,outputs_offset)
+            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord, outputs_connect_class,
+                                                    outputs_connect)
         return out
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_coord,outputs_offset):
+    def _set_aux_loss(self, outputs_class, outputs_coord, outputs_connect_class, outputs_connect):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b,'pred_offsets':c}
-                for a, b,c in zip(outputs_class[:-1], outputs_coord[:-1],outputs_offset[:-1])]
+        return [{'pred_logits': a, 'pred_boxes': b, 'pred_connect_logits': c, 'pred_connect_xyxy': d}
+                for a, b, c, d in
+                zip(outputs_class[:-1], outputs_coord[:-1], outputs_connect_class[:-1], outputs_connect[:-1])]
 
 
 class SetCriterion(nn.Module):
@@ -107,6 +114,7 @@ class SetCriterion(nn.Module):
         self.weight_dict = weight_dict
         self.eos_coef = eos_coef
         self.losses = losses
+        self.connect_losses = ["connect_xyxy", "connect_label"]
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
         self.register_buffer('empty_weight', empty_weight)
@@ -146,6 +154,39 @@ class SetCriterion(nn.Module):
         losses = {'cardinality_error': card_err}
         return losses
 
+    def loss_xyxy(self, outputs, targets, indices, num_boxes):
+        assert 'pred_connect_xyxy' in outputs
+        idx = self._get_src_permutation_idx(indices)
+        src_xyxy = outputs["pred_connect_xyxy"][idx]
+        target_xyxy = torch.cat([t['xyxy'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+
+        loss_xyxy = F.l1_loss(src_xyxy, target_xyxy, reduction='none')
+
+        losses = {}
+        losses['loss_xyxy'] = loss_xyxy / num_boxes
+        return losses
+
+    def loss_xyxy_label(self, outputs, targets, indices, num_boxes, log=True):
+        """Classification loss (NLL)
+        targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
+        """
+        assert 'pred_connect_logits' in outputs
+        src_logits = outputs['pred_connect_logits']
+
+        idx = self._get_src_permutation_idx(indices)
+        target_classes_o = torch.cat([1 for t, (_, J) in zip(targets, indices)])
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes,
+                                    dtype=torch.int64, device=src_logits.device)
+        target_classes[idx] = target_classes_o
+
+        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
+        losses = {'loss_connect_ce': loss_ce}
+
+        if log:
+            # TODO this should probably be a separate loss, not hacked in this one here
+            losses['class_connect_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
+        return losses
+
     def loss_boxes(self, outputs, targets, indices, num_boxes):
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
            targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
@@ -167,6 +208,7 @@ class SetCriterion(nn.Module):
         losses['loss_giou'] = loss_giou.sum() / num_boxes
         return losses
 
+    '''
     def loss_offset(self, outputs, targets, indices, num_boxes):
         assert "pred_offsets" in outputs
 
@@ -183,6 +225,7 @@ class SetCriterion(nn.Module):
         losses['loss_offset'] = 500*loss_offset.sum() / num_boxes + 500*loss_offset_mse / num_boxes
 
         return losses
+    '''
 
     def loss_masks(self, outputs, targets, indices, num_boxes):
         """Compute the losses related to the masks: the focal loss and the dice loss.
@@ -230,7 +273,8 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'cardinality': self.loss_cardinality,
             'boxes': self.loss_boxes,
-            'offsets': self.loss_offset,
+            'connect_xyxy': self.loss_xyxy,
+            "connect_label": self.loss_xyxy_label,
             'masks': self.loss_masks
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
@@ -248,6 +292,8 @@ class SetCriterion(nn.Module):
         # Retrieve the matching between the outputs of the last layer and the targets
         indices = self.matcher(outputs_without_aux, targets)
 
+        indices_line = self.matcher.get_connect_ids(outputs_without_aux, targets)
+
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_boxes = sum(len(t["labels"]) for t in targets)
         num_boxes = torch.as_tensor([num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device)
@@ -260,9 +306,13 @@ class SetCriterion(nn.Module):
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes))
 
+        for loss in self.connect_losses:
+            losses.update(self.get_loss((loss, outputs, targets, indices_line, num_boxes)))
+
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
             for i, aux_outputs in enumerate(outputs['aux_outputs']):
+
                 indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
                     if loss == 'masks':
@@ -273,6 +323,15 @@ class SetCriterion(nn.Module):
                         # Logging is enabled only for the last layer
                         kwargs = {'log': False}
                     l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_boxes, **kwargs)
+                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
+                    losses.update(l_dict)
+
+                indices_line = self.matcher.get_connect_ids(aux_outputs, targets)
+                for loss in self.connect_losses:
+                    kwargs = {}
+                    if loss == 'connect_label':
+                        kwargs = {'log': False}
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices_line, num_boxes, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
@@ -292,7 +351,7 @@ class PostProcess(nn.Module):
                           For visualization, this should be the image size after data augment, but before padding
         """
         out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
-        output_offset = outputs["pred_offsets"]
+        out_connect_logits,out_connect_xyxy=outputs['pred_connect_logits'],outputs["pred_connect_xyxy"]
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -306,11 +365,9 @@ class PostProcess(nn.Module):
         img_h, img_w = target_sizes.unbind(1)
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
-        scale_fct_offset = torch.stack([img_w, img_h], dim=1)
-        offsets = output_offset * scale_fct_offset[:,None,:]
 
-        results = [{'scores': s, 'labels': l, 'boxes': b, 'offsets': o} for s, l, b, o in
-                   zip(scores, labels, boxes, offsets)]
+        results = [{'scores': s, 'labels': l, 'boxes': b, } for s, l, b in
+                   zip(scores, labels, boxes, )]
 
         return results
 
@@ -372,7 +429,7 @@ def build(args):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    losses = ['labels', 'boxes', 'cardinality','offsets']
+    losses = ['labels', 'boxes', 'cardinality']
     if args.masks:
         losses += ["masks"]
     criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict,
