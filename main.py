@@ -184,7 +184,6 @@ def main(args):
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
         # offset_embed
-        print(checkpoint["model"])
         #del checkpoint["model"]["offset_embed.weight"]
         #del checkpoint["model"]["offset_embed.bias"]
         model_without_ddp.load_state_dict(checkpoint['model'],strict=False)

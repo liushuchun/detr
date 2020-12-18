@@ -37,7 +37,7 @@ class DETR(nn.Module):
         hidden_dim = transformer.d_model
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
 
-        self.conn_class_embed = nn.Linear(hidden_dim, 2)
+        self.conn_class_embed = nn.Linear(hidden_dim, 3)
         self.conn_embed = MLP(hidden_dim, hidden_dim, 4, 3)
 
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
@@ -174,7 +174,7 @@ class SetCriterion(nn.Module):
         src_logits = outputs['pred_connect_logits']
 
         idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([1 for t, (_, J) in zip(targets, indices)])
+        target_classes_o = torch.cat([t["xyxy_label"][J] for t, (_, J) in zip(targets, indices)])
         target_classes = torch.full(src_logits.shape[:2], self.num_classes,
                                     dtype=torch.int64, device=src_logits.device)
         target_classes[idx] = target_classes_o
@@ -307,7 +307,8 @@ class SetCriterion(nn.Module):
             losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes))
 
         for loss in self.connect_losses:
-            losses.update(self.get_loss((loss, outputs, targets, indices_line, num_boxes)))
+            print(loss)
+            losses.update(self.get_loss(loss, outputs, targets, indices_line, num_boxes))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
@@ -327,6 +328,7 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
                 indices_line = self.matcher.get_connect_ids(aux_outputs, targets)
+                """
                 for loss in self.connect_losses:
                     kwargs = {}
                     if loss == 'connect_label':
@@ -334,7 +336,7 @@ class SetCriterion(nn.Module):
                     l_dict = self.get_loss(loss, aux_outputs, targets, indices_line, num_boxes, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
-
+                """
         return losses
 
 
@@ -359,15 +361,17 @@ class PostProcess(nn.Module):
         prob = F.softmax(out_logits, -1)
         scores, labels = prob[..., :-1].max(-1)
 
+        connect_scores,connect_labels =F.softmax(out_connect_logits,-1)[...,:-1].max(-1)
+        
         # convert to [x0, y0, x1, y1] format
         boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
-
-        results = [{'scores': s, 'labels': l, 'boxes': b, } for s, l, b in
-                   zip(scores, labels, boxes, )]
+        xyxy = out_connect_xyxy*scale_fct[:,None,:]
+        results = [{'scores': s, 'labels': l, 'boxes': b,'xyxy_score':c,'xyxy':d } for s, l, b,c,d in
+                   zip(scores, labels, boxes,connect_scores,xyxy )]
 
         return results
 

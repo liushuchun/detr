@@ -44,7 +44,7 @@ class HungarianMatcher(nn.Module):
 
         # Also concat the target labels and line
 
-        tgt_ids = torch.cat([1 for _ in targets])
+        tgt_ids = torch.cat([v["xyxy_label"] for v in targets])
         tgt_xyxy = torch.cat([v["xyxy"] for v in targets])
 
         # Compute the classification cost, Contrary to the loss, we don't use th NLL,
@@ -55,7 +55,8 @@ class HungarianMatcher(nn.Module):
         cost_xyxy = torch.cdist(out_xyxy, tgt_xyxy)
         C = self.cost_class * cost_class + self.cost_xyxy * cost_xyxy
         C = C.view(bs, num_queries, -1).cpu()
-        sizes = [len(v["pred_connect_xyxy"]) for v in targets]
+        
+        sizes = [len(v["xyxy_label"]) for v in targets]
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
 

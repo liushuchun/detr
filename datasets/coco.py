@@ -65,9 +65,14 @@ class ConvertCocoPolysToMask(object):
 
         boxes = [obj["bbox"] for obj in anno]
 
-        xyxy = [obj["xyxy"] for obj in anno]
-        xyxy = torch.as_tensor(xyxy, dtype=torch.float32).reshape(-1, 2)
+        xyxy = [obj["xyxy"] for obj in anno if obj["xyxy"][0]>0 and obj["xyxy"][1]>0 and obj["xyxy"][2]>0 and obj["xyxy"][3]>0]
+        
+        xyxy_label=[1 for _ in xyxy]
+        xyxy_label=torch.tensor(xyxy_label,dtype=torch.int64)
 
+        xyxy = torch.as_tensor(xyxy, dtype=torch.float32).reshape(-1, 4)
+
+       
         # guard against no boxes via resizing
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
         boxes[:, 2:] += boxes[:, :2]
@@ -86,11 +91,10 @@ class ConvertCocoPolysToMask(object):
         classes = classes[keep]
         if self.return_masks:
             masks = masks[keep]
-        if self.return_offsets:
-            xyxy = xyxy[keep]
         target = {}
         target["boxes"] = boxes
         target["labels"] = classes
+        target["xyxy_label"]=xyxy_label
 
         if self.return_masks:
             target["masks"] = masks
