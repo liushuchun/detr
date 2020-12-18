@@ -18,10 +18,10 @@ def convert_front_to_coco(front_path):
         for line in f.readlines():
 
             for idx, char in enumerate(line):
-                key_map[char] = idx+1
+                key_map[char] = idx + 1
             break
 
-    key_map["[UNKONWN]"] = len(key_map)+1
+    key_map["[UNKONWN]"] = len(key_map) + 1
 
     # "[UNKNOWN]"
     print(len(key_map))  # 3595
@@ -103,10 +103,9 @@ def convert_front_to_coco(front_path):
                 anno_next = text_annos[i + 1]
                 center_cur = anno_cur["center"]
                 center_next = anno_next["center"]
-                offset = [center_next[0] - center_cur[0], center_next[1] - center_cur[1]]
-                text_annos[i]["offset"] = offset
-            if text_annos:
-                text_annos[-1]["offset"]=[0.0,0.0]
+                offset = [center_next[0], center_next[1], center_cur[0], center_cur[1]]
+                text_annos[i]["xyxy"] = offset
+
 
             annotations.extend(text_annos)
             groups.append(group_id)

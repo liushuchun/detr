@@ -33,6 +33,11 @@ class Transformer(nn.Module):
         decoder_norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm,
                                           return_intermediate=return_intermediate_dec)
+        #decoder_layer_line = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout, activation,
+        #                                             normalize_before)
+
+        #self.decoder_line = TransformerDecoder(decoder_layer_line, num_decoder_layers, decoder_norm,
+        #                                      return_intermediate=return_intermediate_dec)
 
         self._reset_parameters()
 
@@ -56,7 +61,8 @@ class Transformer(nn.Module):
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
         hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
                           pos=pos_embed, query_pos=query_embed)
-        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+        #hs_line = self.decoder_line(tgt, memory, memory_key_padding_mask=mask, pos=pos_embed, query_pos=query_embed)
+        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w) #, hs_line.transpose(1, 2)
 
 
 class TransformerEncoder(nn.Module):

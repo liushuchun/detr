@@ -17,7 +17,7 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1):
+    def __init__(self, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1, cost_xyxy: float = 1):
         """Creates the matcher
 
         Params:
@@ -29,7 +29,35 @@ class HungarianMatcher(nn.Module):
         self.cost_class = cost_class
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
+        self.cost_xyxy = cost_xyxy
         assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
+
+    @torch.no_grad()
+    def get_connect_ids(self, outputs, targets):
+        """Performs the matching of connection
+        """
+        bs, num_queries = outputs["pred_connect_logits"].shape[:2]
+
+        # We flatten to compute the cost matrices in a batch
+        out_prob = outputs["pred_connect_logits"].flatten(0, 1).softmax(-1)  # [batch_size*num_queries,num_classes]
+        out_xyxy = outputs["pred_connect_xyxy"].flatten(0, 1)  # [batch_size*num_queries,4]
+
+        # Also concat the target labels and line
+
+        tgt_ids = torch.cat([1 for _ in targets])
+        tgt_xyxy = torch.cat([v["xyxy"] for v in targets])
+
+        # Compute the classification cost, Contrary to the loss, we don't use th NLL,
+        # but approximate it in 1 -proba[target classs]
+        # The 1 is a constant that doesn't change the matching, it can be ommitted.
+        cost_class = - out_prob[:, tgt_ids]
+
+        cost_xyxy = torch.cdist(out_xyxy, tgt_xyxy)
+        C = self.cost_class * cost_class + self.cost_xyxy * cost_xyxy
+        C = C.view(bs, num_queries, -1).cpu()
+        sizes = [len(v["pred_connect_xyxy"]) for v in targets]
+        indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
+        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
 
     @torch.no_grad()
     def forward(self, outputs, targets):
@@ -71,9 +99,9 @@ class HungarianMatcher(nn.Module):
         cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
 
         # Compute the giou cost betwen boxes
-        
-        #a=box_cxcywh_to_xyxy(out_bbox)
-        #b=box_cxcywh_to_xyxy(tgt_bbox)
+
+        # a=box_cxcywh_to_xyxy(out_bbox)
+        # b=box_cxcywh_to_xyxy(tgt_bbox)
         cost_giou = -generalized_box_iou(box_cxcywh_to_xyxy(out_bbox), box_cxcywh_to_xyxy(tgt_bbox))
 
         # Final cost matrix
