@@ -52,7 +52,7 @@ class HungarianMatcher(nn.Module):
         # The 1 is a constant that doesn't change the matching, it can be ommitted.
         cost_class = - out_prob[:, tgt_ids]
 
-        cost_xyxy = torch.cdist(out_xyxy, tgt_xyxy)
+        cost_xyxy = torch.cdist(out_xyxy, tgt_xyxy,p=1)
         C = self.cost_class * cost_class + self.cost_xyxy * cost_xyxy
         C = C.view(bs, num_queries, -1).cpu()
         

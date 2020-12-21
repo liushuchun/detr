@@ -89,7 +89,7 @@ def get_args_parser():
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--resume', default='checkpoints/checkpoint0039.pth', help='resume from checkpoint')
+    parser.add_argument('--resume', default='checkpoints/checkpoint0069.pth', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
@@ -190,7 +190,7 @@ def main(args):
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             #optimizer.load_state_dict(checkpoint['optimizer'])
             #lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-            args.start_epoch =checkpoint['epoch'] + 1
+            args.start_epoch = 1 #checkpoint['epoch'] + 1
 
     if args.eval:
         test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,

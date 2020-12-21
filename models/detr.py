@@ -163,7 +163,7 @@ class SetCriterion(nn.Module):
         loss_xyxy = F.l1_loss(src_xyxy, target_xyxy, reduction='none')
 
         losses = {}
-        losses['loss_xyxy'] = loss_xyxy / num_boxes
+        losses['loss_xyxy'] = loss_xyxy.sum() / num_boxes
         return losses
 
     def loss_xyxy_label(self, outputs, targets, indices, num_boxes, log=True):
@@ -306,9 +306,8 @@ class SetCriterion(nn.Module):
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes))
 
-        for loss in self.connect_losses:
-            print(loss)
-            losses.update(self.get_loss(loss, outputs, targets, indices_line, num_boxes))
+        #for loss in self.connect_losses:
+        #    losses.update(self.get_loss(loss, outputs, targets, indices_line, num_boxes))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if 'aux_outputs' in outputs:
@@ -328,7 +327,6 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
                 indices_line = self.matcher.get_connect_ids(aux_outputs, targets)
-                """
                 for loss in self.connect_losses:
                     kwargs = {}
                     if loss == 'connect_label':
@@ -336,7 +334,6 @@ class SetCriterion(nn.Module):
                     l_dict = self.get_loss(loss, aux_outputs, targets, indices_line, num_boxes, **kwargs)
                     l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
                     losses.update(l_dict)
-                """
         return losses
 
 
