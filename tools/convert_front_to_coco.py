@@ -99,15 +99,24 @@ def convert_front_to_coco(front_path):
 
                 group_id.append(anno_id)
                 anno_id += 1
-            for i in range(0, len(text_annos) - 1):
-                anno_cur = text_annos[i]
-                anno_next = text_annos[i + 1]
-                center_cur = anno_cur["center"]
-                center_next = anno_next["center"]
-
-                xyxy = [center_cur[0], center_cur[1], center_next[0], center_next[1]]
-                text_annos[i]["xyxy"] = xyxy
             if text_annos:
+                if text_annos[0]["bbox"][-1] < 32:
+                    start_x, start_y = text_annos[0]["center"]
+                    end_x, end_y = text_annos[-1]["center"]
+                    text_annos[0]["xyxy"] = [start_x, start_y, end_x, end_y]
+                    for i in range(1, len(text_annos)):
+                        text_annos[i]["xyxy"] = [0.0, 0.0, 0.0, 0.0]
+
+                else:
+                    for i in range(0, len(text_annos) - 1):
+                        anno_cur = text_annos[i]
+                        anno_next = text_annos[i + 1]
+                        center_cur = anno_cur["center"]
+                        center_next = anno_next["center"]
+
+                        xyxy = [center_cur[0], center_cur[1], center_next[0], center_next[1]]
+                        text_annos[i]["xyxy"] = xyxy
+
                 text_annos[-1]["xyxy"] = [0.0, 0.0, 0.0, 0.0]
 
             annotations.extend(text_annos)
