@@ -14,7 +14,7 @@ import datasets
 import util.misc as utils
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
-from models import build_model
+from models import build_model_v2
 
 
 def get_args_parser():
@@ -118,7 +118,7 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
 
-    model, criterion, postprocessors = build_model(args)
+    model, criterion, postprocessors = build_model_v2(args)
     model.to(device)
 
     model_without_ddp = model
@@ -170,19 +170,21 @@ def main(args):
 
     output_dir = Path(args.output_dir)
     #model = torch.hub.load('facebookresearch/detr', 'detr_resnet50', pretrained=False, num_classes=50)
+    """
     checkpoint = torch.hub.load_state_dict_from_url(
             url='https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth',
             map_location='cpu',
             check_hash=True)
     del checkpoint["model"]["class_embed.weight"]
     del checkpoint["model"]["class_embed.bias"]
-    model_without_ddp.load_state_dict(checkpoint["model"], strict=False) 
+    """
+    #model_without_ddp.load_state_dict(checkpoint["model"], strict=False) 
     if args.resume:
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
-        else:
-            checkpoint = torch.load(args.resume, map_location='cpu')
+        #else:
+        checkpoint = torch.load(args.resume, map_location='cpu')
         # offset_embed
         #del checkpoint["model"]["offset_embed.weight"]
         #del checkpoint["model"]["offset_embed.bias"]

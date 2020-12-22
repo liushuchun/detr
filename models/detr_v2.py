@@ -15,10 +15,10 @@ from .backbone import build_backbone
 from .matcher import build_matcher
 from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
                            dice_loss, sigmoid_focal_loss)
-from .transformer import build_transformer
+from .transformer_v2 import build_transformer
 
 
-class DETR(nn.Module):
+class DETRV2(nn.Module):
     """ This is the DETR module that performs object detection """
 
     def __init__(self, backbone, transformer, num_classes, num_queries, aux_loss=False):
@@ -67,13 +67,13 @@ class DETR(nn.Module):
 
         src, mask = features[-1].decompose()
         assert mask is not None
-        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
+        hs,_,hs_line = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])
 
         outputs_class = self.class_embed(hs)
         outputs_coord = self.bbox_embed(hs).sigmoid()
 
-        outputs_connect_class = self.conn_class_embed(hs)
-        outputs_connect = self.conn_embed(hs).sigmoid()
+        outputs_connect_class = self.conn_class_embed(hs_line)
+        outputs_connect = self.conn_embed(hs_line).sigmoid()
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1],
                "pred_connect_logits": outputs_connect_class[-1], "pred_connect_xyxy": outputs_connect[-1]}
@@ -388,7 +388,7 @@ class MLP(nn.Module):
         return x
 
 
-def build(args):
+def build_v2(args):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -408,7 +408,7 @@ def build(args):
 
     transformer = build_transformer(args)
 
-    model = DETR(
+    model = DETRV2(
         backbone,
         transformer,
         num_classes=num_classes,

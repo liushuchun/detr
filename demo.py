@@ -89,7 +89,7 @@ def get_args_parser():
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--resume', default='./checkpoints/checkpoint0079.pth', help='resume from checkpoint')
+    parser.add_argument('--resume', default='./checkpoints/checkpoint0024.pth', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
@@ -142,21 +142,34 @@ def main(args):
 
     # convert boxes from [0; 1] to image scales
     bboxes_scaled = rescale_bboxes(outputs['pred_boxes'][0, keep], ori_img.size)
-    offsets =outputs['pred_offsets'][0,keep]
+    #print(outputs['pred_connect_logits'])
+    #print("-------------------------")
+    #print(outputs['pred_connect_xyxy'])
+    xyxys = outputs['pred_connect_xyxy']
     img_w,img_h=ori_img.size
-
-    for bbox,offset,proba in zip(bboxes_scaled.tolist(),offsets,probas):
-        print(bbox,offset,proba.max(-1).values)
+    xyxys=xyxys.squeeze()
+    print(xyxys.shape)
+    for bbox,xyxy,proba in zip(bboxes_scaled.tolist(),xyxys.cpu().numpy().tolist(),probas):
         x_min,y_min,x_max,y_max =bbox
         x1_center=(x_min+x_max)/2.0
         y1_center=(y_min+y_max)/2.0
         
-        dx,dy=offset.cpu().numpy().tolist()
-        x2_center=x1_center+dx*img_w
-        y2_center=y1_center+dy*img_h
+        x1,y1,x2,y2=xyxy
+        x1=x1*img_w
+        y1=y1*img_h
+        x2=x2*img_w
+        y2=y2*img_h
+
         cv2.rectangle(cv_img,(int(x_min),int(y_min)),(int(x_max),int(y_max)),(0,255,0),2)
-        cv2.arrowedLine(cv_img,(int(x1_center),int(y1_center)),(int(x2_center),int(y2_center)),(0,0,255),2)
-    
+        #cv2.arrowedLine(cv_img,(int(x1),int(y1)),(int(x2),int(y2)),(0,0,255),2)
+    for xyxy in xyxys.cpu().numpy().tolist():
+        print(xyxy)
+        x1,y1,x2,y2=xyxy
+        x1=x1*img_w
+        y1=y1*img_h
+        x2=x2*img_w
+        y2=y2*img_h
+        cv2.arrowedLine(cv_img,(int(x1),int(y1)),(int(x2),int(y2)),(0,0,255),2)    
     cv2.imwrite(os.path.basename(img_path),cv_img)
 
 if __name__=="__main__":
